@@ -163,6 +163,50 @@ for f in data["key_fixtures"]:
 data["key_fixtures"] = [f for f in data["key_fixtures"] if f["swing"] > 0]
 data["key_fixtures"].sort(key=lambda x: -x["swing"])
 
+
+# ---- "what do I actually want to happen in this match?"
+# A fixture is not simply good or bad for me. I may hold a defender on one side
+# and a striker on the other, and my opponent holds players too. Work out, per
+# team, whether a clean sheet or goals helps me, and net it into one sentence.
+def _side_breakdown(players, team):
+    on = [p for p in players if p["team"] == team]
+    return {
+        "defensive": [p["name"] for p in on if p["pos"] in ("GKP", "DEF")],
+        "attacking": [p["name"] for p in on if p["pos"] in ("MID", "FWD")],
+        "points": round(sum(p["gw_mu"] for p in on), 1),
+    }
+
+
+for f in data["key_fixtures"]:
+    mine_full = [by_id[i] for i in my_xi_ids if by_id[i]["team"] in (f["home"], f["away"])]
+    theirs_full = [opp_by_id[i] for i in opp_xi_ids if opp_by_id[i]["team"] in (f["home"], f["away"])]
+    sides = {}
+    for side_key, team in (("home", f["home"]), ("away", f["away"])):
+        m = _side_breakdown(mine_full, team)
+        t = _side_breakdown(theirs_full, team)
+        # Net interest in this team keeping a clean sheet vs scoring goals
+        cs_net = len(m["defensive"]) - len(t["defensive"])
+        goal_net = len(m["attacking"]) - len(t["attacking"])
+        sides[side_key] = {
+            "team": team, "mine": m, "theirs": t,
+            "want_clean_sheet": cs_net, "want_goals": goal_net,
+        }
+    wants = []
+    for sk in ("home", "away"):
+        s = sides[sk]
+        if s["want_clean_sheet"] > 0:
+            wants.append(f"{s['team']} clean sheet")
+        elif s["want_clean_sheet"] < 0:
+            wants.append(f"{s['team']} to concede")
+        if s["want_goals"] > 0:
+            wants.append(f"{s['team']} goals")
+        elif s["want_goals"] < 0:
+            wants.append(f"{s['team']} kept quiet")
+    f["sides"] = sides
+    f["root_for"] = " · ".join(wants) if wants else "Nothing riding on this one"
+    f["verdict"] = ("Good for you" if f["net"] > 2 else
+                    "Bad for you" if f["net"] < -2 else "Cuts both ways")
+
 json.dump(data, open(os.path.join(HERE, "fpl_data.json"), "w"), separators=(",", ":"))
 
 print(f"POSTURE: {posture}  (margin {margin:+.1f} vs typical swing {combined_sd:.1f})  k={k}")
