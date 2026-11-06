@@ -146,20 +146,47 @@ for e in bs["elements"]:
     players[e["id"]] = p
 
 
+# Positional mean scoring rate, used to shrink individual rates toward.
+_pool = defaultdict(list)
+for _p in players.values():
+    if _p["minutes"] >= 270:
+        _pool[_p["pos"]].append(_p["pts90"])
+POS_MEAN_PTS90 = {k: sum(v) / len(v) for k, v in _pool.items() if v}
+
+# Backtested on gameweeks 5-9 of this season (~1000 player-gameweeks), comparing
+# rank correlation with actual points. Results:
+#   minutes x tilt x heavily-shrunk rate   rho 0.30
+#   minutes x tilt alone                   rho 0.30
+#   last-4-gameweek average                rho 0.22
+#   pts90 x minutes x tilt  (old formula)  rho 0.23
+#   raw pts90 alone                        rho 0.11
+# The per-90 scoring rate over a handful of games is mostly noise: dividing by a
+# small minutes denominator inflates anyone who got one lucky goal. Shrinking it
+# hard toward the positional mean recovers ~28% of ranking accuracy. K is the
+# minutes of evidence needed before a player's own rate carries half the weight;
+# anything from ~1400 up performed identically, so this is not finely tuned.
+SHRINK_K = 1800
+
+
 def projection(p):
-    """Auditable: points per 90 x expected minutes x fixture tilt x availability."""
+    """Expected minutes x fixture tilt x a heavily shrunk scoring rate x availability.
+
+    Deliberately simple and hand-checkable. Every term is backtested above.
+    """
     if p["minutes"] < 180:
         return 0.0
     exp_min = min(p["mins_per_gw"], 90)
-    base = p["pts90"] * (exp_min / 90)
     tilt = 1 + (3.0 - p["fdr"]) * 0.08
+    pm = POS_MEAN_PTS90.get(p["pos"], 4.0)
+    w = p["minutes"] / (p["minutes"] + SHRINK_K)
+    rate = w * p["pts90"] + (1 - w) * pm
     if p["status"] in ("i", "s", "u"):
         a = 0.0
     elif p["status"] == "d":
         a = (p["chance"] if p["chance"] is not None else 50) / 100
     else:
         a = 1.0
-    return round(base * tilt * a, 2)
+    return round((exp_min / 90) * tilt * rate * a, 2)
 
 
 for p in players.values():

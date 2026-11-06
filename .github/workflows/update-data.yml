@@ -2,11 +2,10 @@ name: Update FPL data
 
 on:
   schedule:
-    # Times are UTC. Guatemala is UTC-6.
-    # 07:00 UTC = 01:00 local - overnight, picks up finished gameweeks and bonus points
-    - cron: "0 7 * * *"
-    # 17:00 UTC = 11:00 local - midday, picks up injury news before deadlines
-    - cron: "0 17 * * *"
+    # Every 15 minutes. GitHub does not guarantee punctuality - scheduled runs
+    # are best-effort and get delayed or dropped under load - so treat this as
+    # "usually fresh within ~20 minutes", never as live.
+    - cron: "*/15 * * * *"
   workflow_dispatch:        # adds a "Run workflow" button for manual refreshes
 
 permissions:
