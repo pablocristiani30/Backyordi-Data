@@ -26,6 +26,7 @@ jobs:
           python build_data.py
           python risk.py
           python strategy.py
+          python market.py
 
       - name: Verify output before committing
         run: |
