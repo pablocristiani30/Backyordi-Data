@@ -169,11 +169,19 @@ data["key_fixtures"].sort(key=lambda x: -x["swing"])
 # and a striker on the other, and my opponent holds players too. Work out, per
 # team, whether a clean sheet or goals helps me, and net it into one sentence.
 def _side_breakdown(players, team):
+    """Players are emitted as objects, not bare names, so the UI can show the
+    projection beside each one without having to look it up elsewhere."""
     on = [p for p in players if p["team"] == team]
+
+    def pack(group):
+        return [{"name": p["name"], "pos": p["pos"], "proj": p["gw_mu"]}
+                for p in sorted(group, key=lambda x: -x["gw_mu"])]
+
     return {
-        "defensive": [p["name"] for p in on if p["pos"] in ("GKP", "DEF")],
-        "attacking": [p["name"] for p in on if p["pos"] in ("MID", "FWD")],
+        "defensive": pack([p for p in on if p["pos"] in ("GKP", "DEF")]),
+        "attacking": pack([p for p in on if p["pos"] in ("MID", "FWD")]),
         "points": round(sum(p["gw_mu"] for p in on), 1),
+        "count": len(on),
     }
 
 
@@ -181,14 +189,15 @@ for f in data["key_fixtures"]:
     mine_full = [by_id[i] for i in my_xi_ids if by_id[i]["team"] in (f["home"], f["away"])]
     theirs_full = [opp_by_id[i] for i in opp_xi_ids if opp_by_id[i]["team"] in (f["home"], f["away"])]
     sides = {}
-    for side_key, team in (("home", f["home"]), ("away", f["away"])):
+    for side_key, team, team_name in (("home", f["home"], f["home_name"]),
+                                      ("away", f["away"], f["away_name"])):
         m = _side_breakdown(mine_full, team)
         t = _side_breakdown(theirs_full, team)
         # Net interest in this team keeping a clean sheet vs scoring goals
         cs_net = len(m["defensive"]) - len(t["defensive"])
         goal_net = len(m["attacking"]) - len(t["attacking"])
         sides[side_key] = {
-            "team": team, "mine": m, "theirs": t,
+            "team": team, "team_name": team_name, "mine": m, "theirs": t,
             "want_clean_sheet": cs_net, "want_goals": goal_net,
         }
     wants = []
