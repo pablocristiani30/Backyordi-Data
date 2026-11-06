@@ -1,0 +1,57 @@
+name: Update FPL data
+
+on:
+  schedule:
+    # Times are UTC. Guatemala is UTC-6.
+    # 07:00 UTC = 01:00 local - overnight, picks up finished gameweeks and bonus points
+    - cron: "0 7 * * *"
+    # 17:00 UTC = 11:00 local - midday, picks up injury news before deadlines
+    - cron: "0 17 * * *"
+  workflow_dispatch:        # adds a "Run workflow" button for manual refreshes
+
+permissions:
+  contents: write           # required so the job can commit the regenerated file
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate data
+        run: |
+          python build_data.py
+          python risk.py
+          python strategy.py
+
+      - name: Verify output before committing
+        run: |
+          python - <<'PY'
+          import json, sys, os
+          p = "fpl_data.json"
+          size = os.path.getsize(p)
+          d = json.load(open(p))
+          # Refuse to publish a file that is obviously broken. A bad commit here
+          # would silently feed wrong numbers to the app for a whole gameweek.
+          assert size > 50_000, f"file too small: {size} bytes"
+          assert len(d["my_squad"]) == 15, f"squad has {len(d['my_squad'])} players"
+          assert d["my_xi"]["ids"], "no XI"
+          assert len(d["my_xi"]["ids"]) == 11, "XI is not 11 players"
+          assert d["table"], "no league table"
+          assert all("risk" in p for p in d["my_squad"]), "risk stats missing"
+          print(f"OK - {size/1024:.0f} KB, GW{d['gameweek']['next']}, "
+                f"XI {d['my_xi']['formation']} proj {d['my_xi']['proj']}, "
+                f"posture {d['risk_model']['posture']}")
+          PY
+
+      - name: Commit if changed
+        run: |
+          git config user.name "fpl-bot"
+          git config user.email "actions@github.com"
+          git add fpl_data.json player_history.json
+          git diff --staged --quiet || git commit -m "data: $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push
