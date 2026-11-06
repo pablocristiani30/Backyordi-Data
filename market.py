@@ -45,7 +45,13 @@ def get(url):
 
 
 tx = get(f"https://draft.premierleague.com/api/draft/league/{LEAGUE}/transactions")["transactions"]
-bs = json.load(open(os.path.join(HERE, "raw", "draft_bootstrap.json")))
+
+# Fetch the player list rather than reading a cached raw/ file. A cached copy
+# exists on a development machine but never in a fresh CI checkout, and relying
+# on it is what broke the scheduled job.
+_raw = os.path.join(HERE, "raw", "draft_bootstrap.json")
+bs = (json.load(open(_raw)) if os.path.exists(_raw)
+      else get("https://draft.premierleague.com/api/bootstrap-static"))
 POS = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
 teams = {t["id"]: t["short_name"] for t in bs["teams"]}
 elem = {e["id"]: {"name": e["web_name"], "team": teams[e["team"]],

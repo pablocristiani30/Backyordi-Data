@@ -43,6 +43,9 @@ jobs:
           assert len(d["my_xi"]["ids"]) == 11, "XI is not 11 players"
           assert d["table"], "no league table"
           assert all("risk" in p for p in d["my_squad"]), "risk stats missing"
+          m = d.get("market", {})
+          for k in ("actions", "forced", "trades", "rival_activity", "summary"):
+              assert k in m, f"market.{k} missing"
           print(f"OK - {size/1024:.0f} KB, GW{d['gameweek']['next']}, "
                 f"XI {d['my_xi']['formation']} proj {d['my_xi']['proj']}, "
                 f"posture {d['risk_model']['posture']}")
