@@ -36,8 +36,23 @@ es = get(DRAFT + f"league/{LEAGUE_ID}/element-status")["element_status"]
 cb = get(CLASSIC + "bootstrap-static/")
 fixtures = get(CLASSIC + "fixtures/")
 
-NEXT_GW = game["next_event"] or game["current_event"]
-PLAYED = max(game["current_event"], 1)
+# Which gameweek the dashboard is about.
+#
+# The API flips `next_event` forward the moment a gameweek's FIRST match kicks
+# off, so following it blindly makes the app jump to next week while this
+# week's matches are still being played. Stay on the live gameweek until every
+# match in it has finished.
+if game.get("current_event") and not game.get("current_event_finished"):
+    NEXT_GW = game["current_event"]
+    GW_IN_PROGRESS = True
+else:
+    NEXT_GW = game["next_event"] or game["current_event"]
+    GW_IN_PROGRESS = False
+
+# Completed gameweeks, for per-game averages. The current one only counts once
+# it has finished, otherwise every rate is divided by a gameweek nobody played.
+PLAYED = max(game["current_event"] if game.get("current_event_finished")
+             else game["current_event"] - 1, 1)
 
 POS = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
 SCORING = bs["settings"]["scoring"]
@@ -421,6 +436,26 @@ def mini(p):
     """Compact record for browsing lists - enough for a table row and a basic card."""
     return {k: p[k] for k in MINI_FIELDS}
 
+# ---- the lineup actually set on the official site, once it is visible.
+# Before the deadline the endpoint 404s, which is not an error worth failing on.
+actual_xi = None
+try:
+    _picks = get(DRAFT + f"entry/{MY_ENTRY}/event/{NEXT_GW}")
+    if _picks.get("picks"):
+        _starting = [p["element"] for p in _picks["picks"] if p["position"] <= 11]
+        _bench = [p["element"] for p in _picks["picks"] if p["position"] > 11]
+        _cnt = Counter_pos = defaultdict(int)
+        for pid in _starting:
+            Counter_pos[POS[players[pid]["pos_id"]] if pid in players else "?"] += 1
+        actual_xi = {
+            "ids": _starting,
+            "bench_ids": _bench,
+            "formation": f"{Counter_pos.get('DEF',0)}-{Counter_pos.get('MID',0)}-{Counter_pos.get('FWD',0)}",
+            "names": [players[p]["name"] for p in _starting if p in players],
+        }
+except Exception:
+    actual_xi = None
+
 data = {
     "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     "league": {"id": LEAGUE_ID, "name": ld["league"]["name"],
@@ -428,10 +463,16 @@ data = {
                "transaction_mode": ld["league"]["transaction_mode"],
                "size": len(entries)},
     "gameweek": {"current": game["current_event"], "next": NEXT_GW,
+                 "in_progress": GW_IN_PROGRESS,
+                 "finished": bool(game.get("current_event_finished")),
                  "waivers_processed": game["waivers_processed"],
                  "deadline": next((e["deadline_time"] for e in bs["events"]["data"]
                                    if e["id"] == NEXT_GW), None) if isinstance(bs["events"], dict)
                              else next((e["deadline_time"] for e in bs["events"] if e["id"] == NEXT_GW), None)},
+    # The lineup actually set on the official site. The API hides it until the
+    # deadline passes, so before then this is null and the UI must say so
+    # rather than implying my_xi is what the manager picked.
+    "my_actual_xi": actual_xi,
     "me": {"entry": MY_ENTRY, "team": entries[MY_ENTRY]["entry_name"],
            "manager": f"{entries[MY_ENTRY]['player_first_name']} {entries[MY_ENTRY]['player_last_name']}",
            "waiver_priority": entries[MY_ENTRY]["waiver_pick"]},
